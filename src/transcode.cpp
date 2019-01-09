@@ -176,27 +176,6 @@ int setupDecoding(const char *srcFileName) {
   if (avcodec_open2(codecCtxDec, codecDec, &dictDec)<0)
     return -1; // Could not open codec
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  // Allocate video frame
-  frameDec = av_frame_alloc();
-
-  // Initialize frame
-  frameRGBA = av_frame_alloc();
-  if (frameRGBA == NULL) {
-    fprintf(stderr, "av_frame_alloc failed....");
-    return -1;
-  }
-
-  frameRGBA->format = AV_PIX_FMT_RGBA;
-  frameRGBA->width  = codecCtxDec->width;
-  frameRGBA->height = codecCtxDec->height;
-
-  if (av_frame_get_buffer(frameRGBA, 0) < 0) {
-    fprintf(stderr, "av_frame_get_buffer failed...");
-    return -1;
-  }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //get the scaling context
   swsCtxDec = sws_getContext
     (
@@ -351,7 +330,31 @@ int setupEncoding(const char *dstFileName) {
     return -1;
   }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  printf("setup encoding has done.");
+
+  return 0;
+}
+
+int setupAVFrames(void) {
+  // Allocate video frame
+  frameDec = av_frame_alloc();
+
+  // Initialize frame
+  frameRGBA = av_frame_alloc();
+  if (frameRGBA == NULL) {
+    fprintf(stderr, "av_frame_alloc failed....");
+    return -1;
+  }
+
+  frameRGBA->format = AV_PIX_FMT_RGBA;
+  frameRGBA->width  = codecCtxDec->width;
+  frameRGBA->height = codecCtxDec->height;
+
+  if (av_frame_get_buffer(frameRGBA, 0) < 0) {
+    fprintf(stderr, "av_frame_get_buffer failed...");
+    return -1;
+  }
+
   // Initialize frame
   frameEnc = av_frame_alloc();
   if (frameEnc == NULL) {
@@ -368,9 +371,6 @@ int setupEncoding(const char *dstFileName) {
     return -1;
   }
 
-  printf("setup encoding has done.");
-
-  return 0;
 }
 
 /**
@@ -392,6 +392,10 @@ int transcodeTest(char *srcFileName, char *dstFileName) {
   }
   if (setupEncoding(dstFileName) != 0) {
     fprintf(stderr, "setup encoding failed...");
+    return -1;
+  }
+  if (setupAVFrames() != 0) {
+    fprintf(stderr, "setup AVFrames failed...");
     return -1;
   }
 
