@@ -16,12 +16,7 @@ extern "C" {
 #include <wchar.h>
 
 
-jint JNI_OnLoad(JavaVM *vm, void *reserved);
 }
-
-#define LOG_TAG "FILTER_VIDEO_ON_NATIVE"
-#define LOGI(...) __android_log_print(4, LOG_TAG, __VA_ARGS__);
-#define LOGE(...) __android_log_print(6, LOG_TAG, __VA_ARGS__);
 
 typedef struct SwsContext SwsContext;
 
@@ -33,7 +28,7 @@ int onFrameDecoded(int);
 int encodeFrame(AVFrame *);
 int setupDecoding(const char *);
 int setupEncoding(const char *);
-jint filterVideoNative(JNIEnv *, jobject, jstring, jstring, jstring);
+int transcodeTest(char *, char *, char *);
 
 sp<RS> renderScript = NULL;
 sp<Allocation> alloc_Src = NULL;
@@ -92,7 +87,7 @@ void filterFrame(AVFrame *frame) {
 }
 
 int onFrameDecoded(int frameIndex) {
-  LOGI("sws_scale to RGBA %d", frameIndex);
+  printf("sws_scale to RGBA %d", frameIndex);
   // Convert the image from its native format to RGBA
   sws_scale
   (
@@ -105,10 +100,10 @@ int onFrameDecoded(int frameIndex) {
     frameRGBA->linesize
   );
 
-  LOGI("filtering frame %d", frameIndex);
+  printf("filtering frame %d", frameIndex);
   filterFrame(frameRGBA);
 
-  LOGI("sws_scale from RGBA %d", frameIndex);
+  printf("sws_scale from RGBA %d", frameIndex);
   // Convert the image from RGBA to YUV420p?.
   sws_scale
   (
@@ -123,17 +118,17 @@ int onFrameDecoded(int frameIndex) {
   /**
    * Encode
    */
-  LOGI("encode the frame %d", frameIndex);
+  printf("encode the frame %d", frameIndex);
   int64_t pts = av_frame_get_best_effort_timestamp(frameDec);
   frameEnc->pts = av_rescale_q(pts, videoStrmDec->time_base, codecCtxEnc->time_base);
   frameEnc->key_frame = 0;
   frameEnc->pict_type = AV_PICTURE_TYPE_NONE;
 
   if (encodeFrame(frameEnc) != 0) {
-    LOGE("encodeFrame failed...");
+    fprintf(stderr, "encodeFrame failed...");
     return -1;
   }
-  LOGI("encoding frame %d has done.", frameIndex);
+  printf("encoding frame %d has done.", frameIndex);
 
   return 0;
 }
@@ -143,7 +138,7 @@ int onFrameDecoded(int frameIndex) {
  */
 int encodeFrame(AVFrame *frame) {
   if (avcodec_send_frame(codecCtxEnc, frame) != 0) {
-    LOGE("avcodec_send_frame failed");
+    fprintf(stderr, "avcodec_send_frame failed");
     return -1;
   }
 
@@ -154,21 +149,21 @@ int encodeFrame(AVFrame *frame) {
   while (1) {
     int result = avcodec_receive_packet(codecCtxEnc, &pktEnc);
     if (result == AVERROR(EAGAIN)) {
-      LOGI("タリナイ．．．モット．．．ふれえむヲ．．．");
+      printf("タリナイ．．．モット．．．ふれえむヲ．．．");
       break;
     } else if (result == AVERROR_EOF) {
-      LOGI("the encoder has been fully flushed.");
+      printf("the encoder has been fully flushed.");
       break;
     } else if (result < 0) {
-      LOGE("error during encoding.  receive_packet failed.");
+      fprintf(stderr, "error during encoding.  receive_packet failed.");
       return -1;
     }
-    LOGI("食事中です。話しかけないでください");
+    printf("食事中です。話しかけないでください");
     pktEnc.stream_index = videoStrmEnc->index;
     av_packet_rescale_ts(&pktEnc, codecCtxEnc->time_base, videoStrmEnc->time_base);
 
     if (av_interleaved_write_frame(fmtCtxEnc, &pktEnc) != 0) {
-      LOGE("av_interleaved_write_frame failed\n");
+      fprintf(stderr, "av_interleaved_write_frame failed\n");
       return -1;
     }
   }
@@ -183,7 +178,7 @@ int setupDecoding(const char *srcFileName) {
     return -1; // Couldn't open file
 
   // Retrieve stream information
-  if (avformat_find_stream_info(fmtCtxDec, NULL)<0)
+  if (avformat_find_stream_info(fmtCtxDec, NULL) < 0)
     return -1; // Couldn't find stream information
 
   // Dump information about file onto standard error
@@ -204,34 +199,34 @@ int setupDecoding(const char *srcFileName) {
   // Find the decoder for the video stream
   AVCodec *codecDec = avcodec_find_decoder(videoStrmDec->codecpar->codec_id);
   if (codecDec == NULL) {
-    LOGE("Unsupported codec!\n");
+    fprintf(stderr, "Unsupported codec!\n");
     return -1; // Codec not found
   }
-  LOGI("source movie codec : %s", avcodec_get_name(videoStrmDec->codecpar->codec_id));
 
   // Alloc codec context
   codecCtxDec = avcodec_alloc_context3(codecDec);
   if (codecCtxDec == NULL) {
-    LOGE("avcodec_alloc_context3 failed\n");
+    fprintf(stderr, "avcodec_alloc_context3 failed\n");
     return -1;
   }
 
   // Open codec
   if (avcodec_parameters_to_context(codecCtxDec, videoStrmDec->codecpar) < 0) {
-    LOGE("avcodec_parameters_to_context failed\n");
+    fprintf(stderr, "avcodec_parameters_to_context failed\n");
     return -1;
   }
   AVDictionary *dictDec = NULL;
   if (avcodec_open2(codecCtxDec, codecDec, &dictDec)<0)
     return -1; // Could not open codec
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Allocate video frame
   frameDec = av_frame_alloc();
 
   // Initialize frame
   frameRGBA = av_frame_alloc();
   if (frameRGBA == NULL) {
-    LOGE("av_frame_alloc failed....");
+    fprintf(stderr, "av_frame_alloc failed....");
     return -1;
   }
 
@@ -240,10 +235,11 @@ int setupDecoding(const char *srcFileName) {
   frameRGBA->height = codecCtxDec->height;
 
   if (av_frame_get_buffer(frameRGBA, 0) < 0) {
-    LOGE("av_frame_get_buffer failed...");
+    fprintf(stderr, "av_frame_get_buffer failed...");
     return -1;
   }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //get the scaling context
   swsCtxDec = sws_getContext
     (
@@ -259,7 +255,7 @@ int setupDecoding(const char *srcFileName) {
         NULL
     );
   if (swsCtxDec == NULL) {
-    LOGE("sws_getContext failed...");
+    fprintf(stderr, "sws_getContext failed...");
     return -1;
   }
 
@@ -270,13 +266,13 @@ int setupEncoding(const char *dstFileName) {
   // Open encode file
   ioCtxEnc = NULL;
   if (avio_open(&ioCtxEnc, dstFileName, AVIO_FLAG_WRITE) < 0) {
-    LOGE("encoded file open failed\n");
+    fprintf(stderr, "encoded file open failed\n");
     return -1;
   }
 
   fmtCtxEnc = NULL;
   if (avformat_alloc_output_context2(&fmtCtxEnc, NULL, "mp4", NULL) < 0) {
-    LOGE("avformat_alloc_output_context2 failed\n");
+    fprintf(stderr, "avformat_alloc_output_context2 failed\n");
     return -1;
   }
 
@@ -284,13 +280,13 @@ int setupEncoding(const char *dstFileName) {
 
   AVCodec *codecEnc = avcodec_find_encoder(AV_CODEC_ID_H264);
   if (codecEnc == NULL) {
-    LOGE("encoder not found ...\n");
+    fprintf(stderr, "encoder not found ...\n");
     return -1;
   }
 
   codecCtxEnc = avcodec_alloc_context3(codecEnc);
   if (codecCtxEnc == NULL) {
-    LOGE("avcodec_alloc_context3 failed\n");
+    fprintf(stderr, "avcodec_alloc_context3 failed\n");
     return -1;
   }
 
@@ -298,7 +294,7 @@ int setupEncoding(const char *dstFileName) {
     codecCtxEnc->pix_fmt = codecEnc->pix_fmts[0];
   else
     codecCtxEnc->pix_fmt = codecCtxDec->pix_fmt;
-  LOGI("pix fmt: %d, %d", codecCtxDec->pix_fmt, codecCtxEnc->pix_fmt);
+  printf("pix fmt: %d, %d", codecCtxDec->pix_fmt, codecCtxEnc->pix_fmt);
 
   // set picture properties
   codecCtxEnc->width = codecCtxDec->width;
@@ -328,7 +324,7 @@ int setupEncoding(const char *dstFileName) {
   av_dict_set(&dictEnc, "level", "4.0", 0);
 
   if (avcodec_open2(codecCtxEnc, codecCtxEnc->codec, &dictEnc) != 0) {
-    LOGE("avcodec_open2 failed\n");
+    fprintf(stderr, "avcodec_open2 failed\n");
     return -1;
   }
 
@@ -337,9 +333,10 @@ int setupEncoding(const char *dstFileName) {
     AVStream *strmDec = fmtCtxDec->streams[i];
 
     if (i == videoStrmDec->index) {
+      // create video stream
       videoStrmEnc = avformat_new_stream(fmtCtxEnc, codecEnc);
       if (videoStrmEnc == NULL) {
-        LOGE("avformat_new_stream failed");
+        fprintf(stderr, "avformat_new_stream failed");
         return -1;
       }
 
@@ -347,7 +344,7 @@ int setupEncoding(const char *dstFileName) {
       videoStrmEnc->time_base = codecCtxEnc->time_base;
 
       if (avcodec_parameters_from_context(videoStrmEnc->codecpar, codecCtxEnc) < 0) {
-        LOGE("avcodec_parameters_from_context failed");
+        fprintf(stderr, "avcodec_parameters_from_context failed");
         return -1;
       }
 
@@ -357,16 +354,17 @@ int setupEncoding(const char *dstFileName) {
       videoStrmEnc->metadata = videoDictEnc;
 
     } else if (strmDec->codecpar->codec_type == AVMEDIA_TYPE_UNKNOWN) {
-      LOGE("Elementary stream %d is of unknown type, cannot proceed.", i);
+      fprintf(stderr, "Elementary stream %d is of unknown type, cannot proceed.", i);
       return -1;
     } else {
+      // create audio stream
       AVStream *strmEnc = avformat_new_stream(fmtCtxEnc, NULL);
       if (strmEnc == NULL) {
-        LOGE("avformat_new_stream failed");
+        fprintf(stderr, "avformat_new_stream failed");
         return -1;
       }
       if (avcodec_parameters_copy(strmEnc->codecpar, strmDec->codecpar) < 0) {
-        LOGE("Copying parameters for stream %d failed.", i);
+        fprintf(stderr, "Copying parameters for stream %d failed.", i);
         return -1;
       }
       strmEnc->time_base = strmDec->time_base;
@@ -374,7 +372,7 @@ int setupEncoding(const char *dstFileName) {
   }
 
   if (avformat_write_header(fmtCtxEnc, NULL) < 0) {
-    LOGE("avformat_write_header failed\n");
+    fprintf(stderr, "avformat_write_header failed\n");
     return -1;
   }
 
@@ -392,14 +390,15 @@ int setupEncoding(const char *dstFileName) {
         NULL
     );
   if (swsCtxEnc == NULL) {
-    LOGE("sws_getContext failed...");
+    fprintf(stderr, "sws_getContext failed...");
     return -1;
   }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Initialize frame
   frameEnc = av_frame_alloc();
   if (frameEnc == NULL) {
-    LOGE("av_frame_alloc failed....");
+    fprintf(stderr, "av_frame_alloc failed....");
     return -1;
   }
 
@@ -408,11 +407,11 @@ int setupEncoding(const char *dstFileName) {
   frameEnc->height = codecCtxEnc->height;
 
   if (av_frame_get_buffer(frameEnc, 0) < 0) {
-    LOGE("av_frame_get_buffer failed...");
+    fprintf(stderr, "av_frame_get_buffer failed...");
     return -1;
   }
 
-  LOGI("setup encoding has done.");
+  printf("setup encoding has done.");
 
   return 0;
 }
@@ -420,9 +419,9 @@ int setupEncoding(const char *dstFileName) {
 /**
  * main function
  */
-jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring jDstFileName, jstring jcachePath) {
+int transcodeTest(char *srcFileName, char *dstFileName, char *cachePath) {
 
-  LOGI("start decoding and encoding\n");
+  printf("start decoding and encoding\n");
 
   // Register all formats and codecs
   av_register_all();
@@ -430,18 +429,12 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
   /**
    * setup
    */
-
-  //get C string from JNI jstring
-  char *srcFileName = (char *) env->GetStringUTFChars(jSrcFileName, NULL);
-  char *dstFileName = (char *) env->GetStringUTFChars(jDstFileName, NULL);
-  char *cachePath = (char *) env->GetStringUTFChars(jcachePath, NULL);
-
   if (setupDecoding(srcFileName) != 0) {
-    LOGE("setup decoding failed...");
+    fprintf(stderr, "setup decoding failed...");
     return -1;
   }
   if (setupEncoding(dstFileName) != 0) {
-    LOGE("setup encoding failed...");
+    fprintf(stderr, "setup encoding failed...");
     return -1;
   }
   setupRS(cachePath, codecCtxDec->width, codecCtxDec->height);
@@ -449,7 +442,7 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
   /**
    * convert
    */
-  LOGI("converting starts.");
+  printf("converting starts.");
 
   int frameIndex = 0;
   AVPacket pktDec;
@@ -459,7 +452,7 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
     if (strmIdx == videoStrmDec->index) {
       // Decode video frame
       if (avcodec_send_packet(codecCtxDec, &pktDec) != 0) {
-        LOGE("avcodec_send_packet failed\n");
+        fprintf(stderr, "avcodec_send_packet failed\n");
         return -1;
       }
       while (avcodec_receive_frame(codecCtxDec, frameDec) == 0) {
@@ -471,7 +464,7 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
       // Remux this frame without reencoding
       av_packet_rescale_ts(&pktDec, fmtCtxDec->streams[strmIdx]->time_base, fmtCtxEnc->streams[strmIdx]->time_base);
       if (av_interleaved_write_frame(fmtCtxEnc, &pktDec) < 0) {
-        LOGE("av_interleaved_write_frame without reencoding failed...");
+        fprintf(stderr, "av_interleaved_write_frame without reencoding failed...");
         return -1;
       }
     }
@@ -479,12 +472,12 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
     av_packet_unref(&pktDec);
   }
 
-  LOGI("converting finished.");
+  printf("converting finished.");
 
   // flush decoder
-  LOGI("flush decoder");
+  printf("flush decoder");
   if (avcodec_send_packet(codecCtxDec, NULL) != 0) {
-    LOGE("flush avcodec_send_packet failed\n");
+    fprintf(stderr, "flush avcodec_send_packet failed\n");
     return -1;
   }
   while (avcodec_receive_frame(codecCtxDec, frameDec) == 0) {
@@ -494,15 +487,15 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
   }
 
   // flush encoder
-  LOGI("flush encoder");
+  printf("flush encoder");
   if (encodeFrame(NULL) != 0) {
-    LOGE("flush encoder failed...");
+    fprintf(stderr, "flush encoder failed...");
     return -1;
   }
 
-  LOGI("write trailer");
+  printf("write trailer");
   if (av_write_trailer(fmtCtxEnc) != 0) {
-    LOGE("av_write_trailer failed\n");
+    fprintf(stderr, "av_write_trailer failed\n");
     return -1;
   }
 
@@ -539,22 +532,7 @@ jint filterVideoNative(JNIEnv *env, jobject pObj, jstring jSrcFileName, jstring 
   avformat_free_context(fmtCtxEnc);
   avio_closep(&ioCtxEnc);
 
-  LOGI("closed resources");
+  printf("closed resources");
 
   return 0;
-}
-
-jint JNI_OnLoad(JavaVM *vm, void *reserved) {
-  JNIEnv *env;
-  if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
-     return -1;
-  }
-  JNINativeMethod nm[1];
-  nm[0].name = "filterVideoNative";
-  nm[0].signature = "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I";
-  nm[0].fnPtr = (void*) filterVideoNative;
-  jclass cls = env->FindClass("com/iplot/movie/FilterModule");
-  //Register methods with env->RegisterNatives.
-  env->RegisterNatives(cls, nm, 1);
-  return JNI_VERSION_1_6;
 }
