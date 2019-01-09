@@ -1,3 +1,7 @@
+// 参考：
+// https://ffmpeg.org/doxygen/trunk/doc_2examples_2transcoding_8c-example.html
+// http://proc-cpuinfo.fixstars.com/2017/08/ffmpeg-api-decode/
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
