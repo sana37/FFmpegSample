@@ -10,10 +10,7 @@ extern "C" {
 
 typedef struct SwsContext SwsContext;
 
-void setupRS(const char *, int, int);
-void releaseRS(void);
 void filterFrame(AVFrame *);
-
 int onFrameDecoded(int);
 int encodeFrame(AVFrame *);
 int setupDecoding(const char *);
