@@ -1,11 +1,3 @@
-#include <RenderScript.h>
-#include "ScriptC_test.h"
-
-#include <jni.h>
-
-/*for android logs*/
-#include <android/log.h>
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -14,8 +6,6 @@ extern "C" {
 
 #include <stdio.h>
 #include <wchar.h>
-
-
 }
 
 typedef struct SwsContext SwsContext;
@@ -28,12 +18,7 @@ int onFrameDecoded(int);
 int encodeFrame(AVFrame *);
 int setupDecoding(const char *);
 int setupEncoding(const char *);
-int transcodeTest(char *, char *, char *);
-
-sp<RS> renderScript = NULL;
-sp<Allocation> alloc_Src = NULL;
-sp<Allocation> alloc_Dest = NULL;
-ScriptC_test *script_test = NULL;
+int transcodeTest(char *, char *);
 
 AVIOContext     *ioCtxEnc;
 
@@ -54,36 +39,8 @@ AVFrame         *frameRGBA;
 AVFrame         *frameEnc;
 
 
-void setupRS(const char *cachePath, int width, int height) {
-  renderScript = new RS();
-  renderScript->init(cachePath);
-  sp<const Type> type = Type::create(renderScript, Element::RGBA_8888(renderScript), width, height, 0);
-  alloc_Src = Allocation::createTyped(renderScript, type, RS_ALLOCATION_MIPMAP_NONE, RS_ALLOCATION_USAGE_SHARED | RS_ALLOCATION_USAGE_SCRIPT, NULL);
-  alloc_Dest = Allocation::createTyped(renderScript, type, RS_ALLOCATION_MIPMAP_NONE, RS_ALLOCATION_USAGE_SHARED | RS_ALLOCATION_USAGE_SCRIPT, NULL);
-  script_test = new ScriptC_test(renderScript);
-}
-
-void releaseRS(void) {
-  // release RenderScript object
-  renderScript->finish();
-}
-
 void filterFrame(AVFrame *frame) {
-  int width = frame->width;
-  int height = frame->height;
-  void *in = frame->data[0];
-  void *out = in;
-
-  // copy input data from pointer in to Allocation alloc_Src
-  alloc_Src->copy2DRangeFrom(0, 0, width, height, in);
-  // set global variable
-  script_test->set_gIn(alloc_Src);
-  script_test->set_width(width);
-  script_test->set_height(height);
-  // calculate
-  script_test->forEach_shader(alloc_Dest);
-  // copy result from Allocation alloc_Dest to out
-  alloc_Dest->copy2DRangeTo(0, 0, width, height, out);
+  // do something
 }
 
 int onFrameDecoded(int frameIndex) {
@@ -419,7 +376,7 @@ int setupEncoding(const char *dstFileName) {
 /**
  * main function
  */
-int transcodeTest(char *srcFileName, char *dstFileName, char *cachePath) {
+int transcodeTest(char *srcFileName, char *dstFileName) {
 
   printf("start decoding and encoding\n");
 
@@ -437,7 +394,6 @@ int transcodeTest(char *srcFileName, char *dstFileName, char *cachePath) {
     fprintf(stderr, "setup encoding failed...");
     return -1;
   }
-  setupRS(cachePath, codecCtxDec->width, codecCtxDec->height);
 
   /**
    * convert
@@ -498,12 +454,6 @@ int transcodeTest(char *srcFileName, char *dstFileName, char *cachePath) {
     fprintf(stderr, "av_write_trailer failed\n");
     return -1;
   }
-
-
-  /**
-   * Release resource about RenderScript
-   */
-  releaseRS();
 
 
   /**
